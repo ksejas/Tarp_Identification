@@ -1,0 +1,1173 @@
+---
+author: "KSejas"
+date: "`r format(Sys.Date(), '%b %d, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(caret)
+library(tidyverse)
+library(viridis)
+library(MASS)
+library(dplyr) 
+
+library(broom)
+library(tidymodels)
+library(glmnet)
+library(data.table)
+library(e1071)
+library(kernlab)
+```
+
+
+
+Training Data
+
+```{r}
+haiti_train <- read.csv("/Users/k/Downloads/DS6030/Project/HaitiPixels.csv", header=TRUE)
+
+haiti_train<-haiti_train %>%  
+  mutate(flag_blue_tarp = case_when(Class=="Blue Tarp" ~ "Blue_Tarp",  
+                                 Class!="Blue Tarp" ~ "Not_Blue_Tarp")) 
+haiti_train<-haiti_train %>%  
+  mutate(flag_blue_tarp_label = case_when(Class=="Blue Tarp" ~ "Blue Tarp",  
+                                 Class!="Blue Tarp" ~ "Not Blue Tarp")) # plots 
+
+haiti_train$flag_blue_tarp<-factor(haiti_train$flag_blue_tarp, levels=c("Blue_Tarp", "Not_Blue_Tarp")) 
+levels(haiti_train$flag_blue_tarp) 
+
+haiti_train$flag_blue_tarp_label<-factor(haiti_train$flag_blue_tarp_label, levels=c("Blue Tarp", "Not Blue Tarp")) 
+```
+
+
+Holdout Data 
+
+```{r}
+h1 <- read_table("/Users/k/Downloads/DS6030/Project/Hold Out Data/orthovnir057_ROI_NON_Blue_Tarps.txt", skip=8, col_names=FALSE, col_types=cols(
+  X1 = col_double(),
+  X2 = col_double(),
+  X3 = col_double(),
+  X4 = col_double(),
+  X5 = col_double(),
+  X6 = col_double(),
+  X7 = col_double(),
+  X8 = col_double(),
+  X9 = col_double(),
+  X10 = col_double()
+))
+h1 <- h1[,-1]
+colnames(h1) <- c("x", "y", "map_x", "map_y", "lat", "lon", "b1", "b2", "b3")
+h1["source_type"]<- "NON_BLUE_TARPS"
+h1["source"]<- "orthovnir057_ROI_NON_Blue_Tarps"
+```
+
+
+This file is not needed. 
+```{r}
+h2 <- read_table("/Users/k/Downloads/DS6030/Project/Hold Out Data/orthovnir067_ROI_Blue_Tarps_data.txt", skip=1, col_names=FALSE, col_types=cols(
+   X1 = col_double(),
+   X2 = col_double(),
+   X3 = col_double()
+))
+colnames(h2) <- c("b1", "b2", "b3")
+
+```
+
+
+
+```{r}
+h3 <- read_table("/Users/k/Downloads/DS6030/Project/Hold Out Data/orthovnir067_ROI_Blue_Tarps.txt", skip=8, col_names=FALSE, col_types=cols(
+  X1 = col_double(),
+  X2 = col_double(),
+  X3 = col_double(),
+  X4 = col_double(),
+  X5 = col_double(),
+  X6 = col_double(),
+  X7 = col_double(),
+  X8 = col_double(),
+  X9 = col_double(),
+  X10 = col_double()
+))
+h3 <- h3[,-1]
+colnames(h3) <- c("x", "y", "map_x", "map_y", "lat", "lon", "b1", "b2", "b3")
+
+h3["source_type"]<- "BLUE_TARPS"
+h3["source"]<- "orthovnir067_ROI_Blue_Tarps"
+```
+
+
+
+```{r}
+h4 <- read_table("/Users/k/Downloads/DS6030/Project/Hold Out Data/orthovnir067_ROI_NOT_Blue_Tarps.txt", skip=8, col_names=FALSE, col_types=cols(
+  X1 = col_double(),
+  X2 = col_double(),
+  X3 = col_double(),
+  X4 = col_double(),
+  X5 = col_double(),
+  X6 = col_double(),
+  X7 = col_double(),
+  X8 = col_double(),
+  X9 = col_double(),
+  X10 = col_double()
+))
+h4 <- h4[,-1]
+colnames(h4) <- c("x", "y", "map_x", "map_y", "lat", "lon", "b1", "b2", "b3")
+
+h4["source_type"]<- "NOT_BLUE_TARPS"
+h4["source"]<- "orthovnir067_ROI_NOT_Blue_Tarps"
+```
+
+
+```{r}
+h5 <- read_table("/Users/k/Downloads/DS6030/Project/Hold Out Data/orthovnir069_ROI_Blue_Tarps.txt", skip=8, col_names=FALSE, col_types=cols(
+  X1 = col_double(),
+  X2 = col_double(),
+  X3 = col_double(),
+  X4 = col_double(),
+  X5 = col_double(),
+  X6 = col_double(),
+  X7 = col_double(),
+  X8 = col_double(),
+  X9 = col_double(),
+  X10 = col_double()
+))
+h5 <- h5[,-1]
+colnames(h5) <- c("x", "y", "map_x", "map_y", "lat", "lon", "b1", "b2", "b3")
+
+h5["source_type"]<- "BLUE_TARPS"
+h5["source"]<- "orthovnir069_ROI_Blue_Tarps"
+```
+
+
+```{r}
+h6 <- read_table("/Users/k/Downloads/DS6030/Project/Hold Out Data/orthovnir069_ROI_NOT_Blue_Tarps.txt", skip=8, col_names=FALSE, col_types=cols(
+  X1 = col_double(),
+  X2 = col_double(),
+  X3 = col_double(),
+  X4 = col_double(),
+  X5 = col_double(),
+  X6 = col_double(),
+  X7 = col_double(),
+  X8 = col_double(),
+  X9 = col_double(),
+  X10 = col_double()
+))
+h6 <- h6[,-1]
+colnames(h6) <- c("x", "y", "map_x", "map_y", "lat", "lon", "b1", "b2", "b3")
+
+h6["source_type"]<- "NOT_BLUE_TARPS"
+h6["source"]<- "orthovnir069_ROI_NOT_Blue_Tarps"
+```
+
+
+
+```{r}
+h7 <- read_table("/Users/k/Downloads/DS6030/Project/Hold Out Data/orthovnir078_ROI_Blue_Tarps.txt", skip=8, col_names=FALSE, col_types=cols(
+  X1 = col_double(),
+  X2 = col_double(),
+  X3 = col_double(),
+  X4 = col_double(),
+  X5 = col_double(),
+  X6 = col_double(),
+  X7 = col_double(),
+  X8 = col_double(),
+  X9 = col_double(),
+  X10 = col_double()
+))
+h7 <- h7[,-1]
+colnames(h7) <- c("x", "y", "map_x", "map_y", "lat", "lon", "b1", "b2", "b3")
+h7["source_type"]<- "BLUE_TARPS"
+h7["source"]<- "orthovnir078_ROI_Blue_Tarps"
+```
+
+
+
+```{r}
+h8 <- read_table("/Users/k/Downloads/DS6030/Project/Hold Out Data/orthovnir078_ROI_NON_Blue_Tarps.txt", skip=8, col_names=FALSE, col_types=cols(
+  X1 = col_double(),
+  X2 = col_double(),
+  X3 = col_double(),
+  X4 = col_double(),
+  X5 = col_double(),
+  X6 = col_double(),
+  X7 = col_double(),
+  X8 = col_double(),
+  X9 = col_double(),
+  X10 = col_double()
+))
+h8 <- h8[,-1]
+colnames(h8) <- c("x", "y", "map_x", "map_y", "lat", "lon", "b1", "b2", "b3")
+h8["source_type"]<- "NON_BLUE_TARPS"
+h8["source"]<- "orthovnir078_ROI_NON_Blue_Tarps"
+```
+
+```{r}
+df_list <-list(h1, h3, h4, h5, h6, h7, h8)
+haiti<- rbindlist(df_list, use.names=TRUE, fill=FALSE, idcol=NULL)
+
+rownames(haiti)<- 1:nrow(haiti)
+```
+
+```{r}
+haiti<-haiti %>% 
+  mutate(flag_blue_tarp = case_when(source_type=="BLUE_TARPS" ~ "Blue_Tarp", 
+                                 source_type!="BLUE_TARPS" ~ "Not_Blue_Tarp"))
+
+haiti<-haiti %>% 
+  mutate(class = case_when(source_type=="BLUE_TARPS" ~ "Blue Tarp", 
+                                 source_type!="BLUE_TARPS" ~ "Not Blue Tarp")) # plots
+
+haiti$flag_blue_tarp<-factor(haiti$flag_blue_tarp, levels=c("Blue_Tarp", "Not_Blue_Tarp"))
+levels(haiti$flag_blue_tarp)
+
+haiti$class<-factor(haiti$class, levels=c("Blue Tarp", "Not Blue Tarp"))
+
+```
+
+Sample of Stacked Holdout Dataset used for EDA Scatterplot Graphs 
+
+```{r}
+  set.seed(1)  
+  split=0.4 
+  index <- caret::createDataPartition(haiti[,flag_blue_tarp], p=split, list=FALSE)
+  samp <- haiti[index, ]
+```
+
+
+# Exploratory Data Analysis
+
+
+```{r}
+plot_f<- function(d, t){
+  ggplot(d, aes(class))+
+  geom_bar(fill = "#0073C2FF")+
+  ggtitle(t)+
+  xlab("Class")+ 
+  ylab("Count")+ 
+  theme(plot.title = element_text(size=12), axis.text.x=element_text(size=11))
+}
+plot_f(haiti, "Class Frequency")
+```
+
+```{r}
+haiti_bluetarp <- haiti[which(haiti$flag_blue_tarp == "Blue_Tarp"),]
+```
+
+```{r}
+haiti_bluetarp_t <- haiti_train[which(haiti_train$Class == "Blue Tarp"),]
+```
+
+```{r}
+plot_f<- function(v, v_t, title){  
+ggplot(haiti_train, aes(x=flag_blue_tarp_label, y=v))+  
+  geom_boxplot()+  
+  labs(x="Whether Blue Tarp", y=v_t, title=title)  
+}  
+plot_f(haiti_train$Red, "Red", "Distribution of Red Pixels by Blue Tarp Identification")  
+plot_f(haiti_train$Green, "Green", "Distribution of Green Pixels by Blue Tarp Identification")  
+plot_f(haiti_train$Blue, "Blue", "Distribution of Blue Pixels by Blue Tarp Identification") 
+```
+
+
+
+```{r}
+plot_f<- function(v, v_t, title){
+ggplot(haiti, aes(x=class, y=v))+
+  geom_boxplot()+
+  labs(x="Whether Blue Tarp", y=v_t, title=title)
+}
+plot_f(haiti$b1, "B1", "Distribution of B1 Pixels by Blue Tarp Identification using Stacked Holdout Dataset")
+plot_f(haiti$b2, "B2", "Distribution of B2 Pixels by Blue Tarp Identification using Stacked Holdout Dataset")
+plot_f(haiti$b3, "B3", "Distribution of B3 Pixels by Blue Tarp Identification using Stacked Holdout Dataset")
+```
+
+```{r}
+ggplot(haiti_train, aes(x=Red, y=Blue, color=Class))+
+  geom_point(alpha=0.2)+
+  labs(x='Red', y='Blue', title='Scatterplot of Blue Pixels Against Red Pixels')+
+  scale_color_manual(values=c("royalblue1", "gray52", "tan4", "magenta1", "green4"))
+
+```
+```{r}
+haiti_bluetarp_t2 <- haiti_bluetarp_t[which(haiti_bluetarp_t$Blue == 255),]
+```
+
+```{r}
+ggplot(haiti_train, aes(x=Green, y=Blue, color=Class))+
+  geom_point(alpha=0.2)+
+  labs(x='Green', y='Blue', title='Scatterplot of Blue Pixels Against Green Pixels')+
+  scale_color_manual(values=c("royalblue1", "gray52", "tan4", "magenta1", "green4"))
+
+```
+
+
+
+```{r}
+
+ggplot(samp, aes(x=b1, y=b3, color=class))+
+  geom_point(alpha=0.2)+
+  labs(x='B1 (red)', y='B3 (blue)', title='Scatterplot of B3 (Blue) Pixels Against B1 (Red) Pixels')+
+  scale_color_manual(values=c("royalblue1", "gray52"))
+
+```
+
+```{r}
+haiti_bluetarp2 <- haiti_bluetarp[which(haiti_bluetarp$b3 == 255),]
+```
+
+```{r}
+
+ggplot(samp, aes(x=b2, y=b3, color=class))+
+  geom_point(alpha=0.2)+
+  labs(x='B2 (green)', y='B3 (blue)', title='Scatterplot of B3 (Blue) Pixels Against B2 (Green) Pixels')+
+  scale_color_manual(values=c("royalblue1", "gray52"))
+
+```
+# Tuning Process 
+
+# KNN Tuning Process
+
+
+```{r}
+  set.seed(1)  
+  folds <- createFolds(haiti_train$flag_blue_tarp, k = 10, list = TRUE, returnTrain = TRUE)
+  kvals<- data.frame(k=seq(1, 100, by=2))
+  kfolds <- 10
+  Control <- caret::trainControl(method='cv', number=kfolds, index = folds, savePredictions = "final", classProbs = TRUE)
+  
+  model <- caret::train(flag_blue_tarp ~ Blue + Green + Red, data=haiti_train,
+               method='knn',  
+               tuneGrid=kvals,
+               metric = 'Accuracy',
+               trControl=Control
+               )  
+
+  model$results %>% slice_max(Accuracy)
+```
+```{r}
+model_results <- model$results
+model_results$Error_Rate <- (1-model_results$Accuracy)*100
+
+ggplot(model_results, aes(x=k, y=Error_Rate)) +
+  geom_point() +
+  geom_line() +
+  labs(x="k", y="Error Rate (%)", title="Error Rate by K Value")
+```
+  
+  
+```{r}
+
+  kvals<- data.frame(k=seq(1, 5, by=1))
+  kfolds <- 10
+  Control <- caret::trainControl(method='cv', number=kfolds, index = folds, savePredictions = "final", classProbs = TRUE)
+  
+  model_2 <- caret::train(flag_blue_tarp ~ Blue + Green + Red, data=haiti_train,
+               method='knn',  
+               tuneGrid=kvals,
+               metric = 'Accuracy',
+               trControl=Control
+               )  
+
+  model_2$results %>% slice_max(Accuracy)
+```
+
+
+```{r}
+model_results_2 <- model_2$results
+model_results_2$Error_Rate <- (1-model_results_2$Accuracy)*100
+
+ggplot(model_results_2, aes(x=k, y=Error_Rate)) +
+  geom_point() +
+  geom_line() +
+  labs(x="k", y="Error Rate (%)", title="Error Rate by K Value")
+```
+  
+  
+
+# Penalized Logistic Regression Tuning Process
+
+
+
+```{r}
+
+fmla = as.formula(flag_blue_tarp ~ Blue + Green + Red)  
+#-- Logistic Regression (unpenalized)
+fit.logistic = glm(fmla, family=binomial(), data=haiti_train)
+tidy(fit.logistic) %>% head()
+
+```
+
+```{r}
+#-- Option 1: using model.matrix()
+X.train = model.matrix(fmla, data = haiti_train)[,-1] # remove intercept term
+Y.train = haiti_train$flag_blue_tarp
+```
+
+```{r}
+fit.ridge = glmnet(X.train, Y.train,
+                   alpha = 0,          # this uses ridge penalty
+                   family="binomial")  
+opar=par(mfrow=c(1,2))
+plot(fit.ridge, "norm")   
+plot(fit.ridge, "lambda")   
+```
+
+
+```{r}
+par(opar)
+tidy(fit.ridge) %>% head()   # coefficients for set of lambda values
+```
+
+
+
+
+```{r}
+set.seed(1)
+e_net_p = cv.glmnet(x = X.train, y=Y.train, alpha=0.5,
+                     family="binomial")
+
+(lambda.hat = e_net_p$lambda.min)
+
+coef(e_net_p, s="lambda.min")
+plot(e_net_p)
+```
+# Support Vector Machine Tuning 
+
+Linear Kernel: 
+
+
+```{r}
+set.seed(1)
+tune_svm <- tune(svm, flag_blue_tarp ~ Blue + Green + Red, data = haiti_train, kernel = "linear", 
+    ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 100, 125, 130, 135, 140, 145, 150, 175, 200)))
+```
+
+```{r}
+summary(tune_svm)
+```
+
+
+
+```{r}
+bestmod <- tune_svm$best.model
+summary(bestmod)
+```
+
+
+Radial Kernel: 
+
+
+```{r}
+  set.seed(1)  
+  split=0.4 
+  index <- caret::createDataPartition(haiti_train[,'flag_blue_tarp'], p=split, list=FALSE)
+  samp_svm <- haiti_train[index, ]
+  
+```
+
+
+```{r}
+set.seed(1)
+fit_radial <- tune(svm, flag_blue_tarp ~ Blue + Green + Red, data = samp_svm, kernel = "radial",  
+    ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 100, 125, 130, 135, 140, 145, 150, 175, 200), gamma = c(0.001, 0.01, 0.1, 1, 5, 10, 25, 50, 75, 100)))
+```
+
+```{r}
+summary(fit_radial)
+```
+
+
+
+
+
+
+```{r}
+bestmod <- fit_radial$best.model
+summary(bestmod)
+```
+
+
+
+Polynomial Kernel Tuning: 
+
+```{r}
+set.seed(1)
+fit_poly <- tune(svm, flag_blue_tarp ~ Blue + Green + Red, data = samp_svm, kernel = "polynomial",  
+    ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 100, 125, 130, 135, 140, 145, 150, 175, 200), degree = c(2, 3, 4, 5, 6, 7)))
+```
+
+```{r}
+summary(fit_poly)
+```
+
+
+
+
+
+
+```{r}
+bestmod <- fit_poly$best.model
+summary(bestmod)
+```
+
+
+
+
+# Model Training  
+
+```{r}
+  set.seed(1)  
+  kfolds <- 10
+  folds <- createFolds(haiti_train$flag_blue_tarp, k = 10, list = TRUE, returnTrain = TRUE)
+  Control <- caret::trainControl(method='cv', number=kfolds, index = folds, savePredictions = "final", classProbs = TRUE)
+  
+  model_glm <- caret::train(flag_blue_tarp ~ Blue + Green + Red, data=haiti_train,
+                        method='glm',  
+                        tuneGrid=NULL,
+                        trControl=Control,
+                        family='binomial')  
+
+  model_lda <- caret::train(flag_blue_tarp ~ Blue + Green + Red, data=haiti_train,
+                        method='lda',  
+                        tuneGrid=NULL,
+                        trControl=Control
+                        )  
+  
+  model_qda <- caret::train(flag_blue_tarp ~ Blue + Green + Red, data=haiti_train,
+                        method='qda',  
+                        tuneGrid=NULL,
+                        trControl=Control
+                        )  
+  
+  model_knn <- caret::train(flag_blue_tarp ~ Blue + Green + Red, data=haiti_train,
+                        method='knn',  
+                        tuneGrid=expand.grid(k=3),
+                        trControl=Control
+               )  
+  
+  model_plr <- caret::train(flag_blue_tarp ~ Blue + Green + Red, data=haiti_train,
+                        method='plr',  
+                        tuneGrid=expand.grid(lambda=0, cp="bic"),
+                        trControl=Control
+                        )  
+  
+  model_rf <- caret::train(flag_blue_tarp ~ Blue + Green + Red, data=haiti_train,
+                        method='rf',  
+                        tuneGrid=expand.grid(mtry=2),
+                        trControl=Control,
+                        ntree=500
+                        )  
+  
+  model_svm_l <- caret::train(flag_blue_tarp ~ Blue + Green + Red, data=haiti_train,
+                        method='svmLinear',  
+                        tuneGrid=data.frame(C=135),
+                        trControl=Control
+                        )  
+```
+
+```{r}
+  model_svm_r <- caret::train(flag_blue_tarp ~ Blue + Green + Red, data=haiti_train,
+                        method='svmRadial',  
+                        tuneGrid=expand.grid(C=10, sigma=25),
+                        trControl=Control
+                        )  
+```
+
+
+
+```{r}
+
+haiti <- haiti %>%
+    rename(Blue = b3,
+           Green = b2, 
+           Red = b1)
+
+evaluateModel <- function(method, tuneGrid, outcome, title_m, model_sel, ...) {
+
+  preds <- predict(model_sel, haiti)
+
+  metrics <- caret::postResample(pred = preds, obs = haiti[, flag_blue_tarp])
+
+  pred_r <- predict(model_sel, haiti, type='prob')
+  pred_r_ob <- ROCR::prediction(pred_r$Not_Blue_Tarp, haiti$flag_blue_tarp, label.ordering=c('Blue_Tarp', 'Not_Blue_Tarp'))
+  model.roc <- ROCR::performance(pred_r_ob, measure='tpr', x.measure='fpr')
+  plot(model.roc, colorize=T, print.cutoffs.at=c(0, 0.1, 0.9, 1.0))
+  lines(x=c(0,1), y=c(0,1), col='grey')
+  title(main=title_m)
+  
+  ROCR::performance(pred_r_ob,"auc")@y.values[[1]]
+  
+  return( tibble(
+    Method = method, 
+    Accuracy = metrics['Accuracy'],
+    ErrorRate = 1 - metrics['Accuracy'],
+    AUC = ROCR::performance(pred_r_ob,"auc")@y.values[[1]]
+  ))
+    
+}
+
+results <- rbind(
+  evaluateModel('glm', NULL, 'flag_blue_tarp', "Logistic Regression ROC Curve", model_glm),
+  evaluateModel('lda', NULL, 'flag_blue_tarp', "LDA ROC Curve", model_lda),
+  evaluateModel('qda', NULL, 'flag_blue_tarp', "QDA ROC Curve", model_qda),
+  evaluateModel('knn', expand.grid(k=3), 'flag_blue_tarp', "KNN ROC Curve", model_knn),
+  evaluateModel('plr', expand.grid(lambda=0, cp="bic"), 'flag_blue_tarp', "Penalized Logistic Regression ROC Curve", model_plr),
+  evaluateModel('rf', expand.grid(mtry=2), 'flag_blue_tarp', "Random Forest ROC Curve", model_rf),
+  evaluateModel('svmLinear', data.frame(C=135), 'flag_blue_tarp', "Support Vector Machine Linear Kernel ROC Curve", model_svm_l),
+  evaluateModel('svmRadial', expand.grid(C=10, sigma=25), 'flag_blue_tarp', "Support Vector Machine Radial Kernel ROC Curve", model_svm_r)
+)  
+bestModels <- which.max(results$Accuracy)
+results %>% 
+  knitr::kable(digits=3)  %>%
+  kableExtra::kable_styling(full_width=FALSE)  %>%
+  kableExtra::row_spec(bestModels, bold=TRUE, background='#D3D3D3')
+```
+
+# Selecting a Threshold Value
+
+
+# Logistic Regression Threshold Value Selection
+
+  All probability thresholds table: 
+
+
+```{r}
+
+  threshold.stats <- caret::thresholder(model_glm,
+                                        threshold = seq(0.05, 0.95, by = 0.05),
+                                        statistics = "all")
+  threshold.stats$TPR <- threshold.stats$Sensitivity
+  threshold.stats$TNR <- threshold.stats$Specificity
+  
+  
+  threshold.stats$FNR <- 1 - threshold.stats$Sensitivity
+  threshold.stats$FPR <- 1 - threshold.stats$Specificity
+  
+  threshold.stats %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Negative Rate 
+```{r}
+  threshold.stats %>% slice_min(FNR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Positive Rate
+
+```{r}
+  threshold.stats %>% slice_min(FPR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)  
+```
+
+
+
+ Smallest distance to top left in the ROC curve
+
+```{r}
+  threshold.stats %>% slice_min(Dist) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE) 
+```
+
+```{r}
+  minDistance <- threshold.stats %>% slice_min(Dist)
+  ggplot(threshold.stats, aes(x=prob_threshold, y=Dist)) +
+    geom_line() +
+    geom_point(data=minDistance, color="red")+
+    xlab("Probability Threshold")+
+    ylab("Distance to Top Left in the ROC Curve")+
+    ggtitle("Distance to Top Left in the ROC Curve by Probability Threshold")
+    
+```
+
+
+
+
+# LDA Threshold Value Selection
+
+  All probability thresholds table: 
+
+```{r}
+
+  threshold.stats <- caret::thresholder(model_lda,
+                                        threshold = seq(0.05, 0.95, by = 0.05),
+                                        statistics = "all")
+  threshold.stats$TPR <- threshold.stats$Sensitivity
+  threshold.stats$TNR <- threshold.stats$Specificity
+  
+  
+  threshold.stats$FNR <- 1 - threshold.stats$Sensitivity
+  threshold.stats$FPR <- 1 - threshold.stats$Specificity
+  
+  threshold.stats %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Negative Rate 
+```{r}
+  threshold.stats %>% slice_min(FNR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Positive Rate
+
+```{r}
+  threshold.stats %>% slice_min(FPR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)  
+```
+
+
+
+ Smallest distance to top left in the ROC curve
+
+```{r}
+  threshold.stats %>% slice_min(Dist) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE) 
+```
+
+
+```{r}
+  minDistance <- threshold.stats %>% slice_min(Dist)
+  ggplot(threshold.stats, aes(x=prob_threshold, y=Dist)) +
+    geom_line() +
+    geom_point(data=minDistance, color="red")+
+    xlab("Probability Threshold")+
+    ylab("Distance to Top Left in the ROC Curve")+
+    ggtitle("Distance to Top Left in the ROC Curve by Probability Threshold")
+    
+```
+
+
+
+
+# QDA Threshold Value Selection
+
+  All probability thresholds table: 
+
+```{r}
+  
+  threshold.stats <- caret::thresholder(model_qda,
+                                        threshold = seq(0.05, 0.95, by = 0.05),
+                                        statistics = "all")
+  threshold.stats$TPR <- threshold.stats$Sensitivity
+  threshold.stats$TNR <- threshold.stats$Specificity
+  
+  
+  threshold.stats$FNR <- 1 - threshold.stats$Sensitivity
+  threshold.stats$FPR <- 1 - threshold.stats$Specificity
+  
+  threshold.stats %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Negative Rate 
+```{r}
+  threshold.stats %>% slice_min(FNR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Positive Rate
+
+```{r}
+  threshold.stats %>% slice_min(FPR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)  
+```
+
+
+
+ Smallest distance to top left in the ROC curve
+
+```{r}
+  threshold.stats %>% slice_min(Dist) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE) 
+```
+
+```{r}
+  minDistance <- threshold.stats %>% slice_min(Dist)
+  ggplot(threshold.stats, aes(x=prob_threshold, y=Dist)) +
+    geom_line() +
+    geom_point(data=minDistance, color="red")+
+    xlab("Probability Threshold")+
+    ylab("Distance to Top Left in the ROC Curve")+
+    ggtitle("Distance to Top Left in the ROC Curve by Probability Threshold")
+    
+```
+
+
+
+
+# KNN Threshold Value Selection 
+
+  All probability thresholds table: 
+
+```{r}
+
+  threshold.stats <- caret::thresholder(model_knn,
+                                        threshold = seq(0.05, 0.95, by = 0.05),
+                                        statistics = "all")
+  threshold.stats$TPR <- threshold.stats$Sensitivity
+  threshold.stats$TNR <- threshold.stats$Specificity
+  
+  
+  threshold.stats$FNR <- 1 - threshold.stats$Sensitivity
+  threshold.stats$FPR <- 1 - threshold.stats$Specificity
+  
+  threshold.stats %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Negative Rate 
+```{r}
+  threshold.stats %>% slice_min(FNR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Positive Rate
+
+```{r}
+  threshold.stats %>% slice_min(FPR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)  
+```
+
+
+
+ Smallest distance to top left in the ROC curve
+
+```{r}
+  threshold.stats %>% slice_min(Dist) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE) 
+```
+
+```{r}
+  minDistance <- threshold.stats %>% slice_min(Dist)
+  ggplot(threshold.stats, aes(x=prob_threshold, y=Dist)) +
+    geom_line() +
+    geom_point(data=minDistance, color="red")+
+    xlab("Probability Threshold")+
+    ylab("Distance to Top Left in the ROC Curve")+
+    ggtitle("Distance to Top Left in the ROC Curve by Probability Threshold")
+    
+```
+
+
+
+# Penalized Logistic Regression Threshold Value Selection 
+
+  All probability thresholds table: 
+
+```{r}
+
+  threshold.stats <- caret::thresholder(model_plr,
+                                        threshold = seq(0.05, 0.95, by = 0.05),
+                                        statistics = "all")
+  threshold.stats$TPR <- threshold.stats$Sensitivity
+  threshold.stats$TNR <- threshold.stats$Specificity
+  
+  
+  threshold.stats$FNR <- 1 - threshold.stats$Sensitivity
+  threshold.stats$FPR <- 1 - threshold.stats$Specificity
+  
+  threshold.stats %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Negative Rate 
+```{r}
+  threshold.stats %>% slice_min(FNR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Positive Rate
+
+```{r}
+  threshold.stats %>% slice_min(FPR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)  
+```
+
+
+
+ Smallest distance to top left in the ROC curve
+
+```{r}
+  threshold.stats %>% slice_min(Dist) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE) 
+```
+
+```{r}
+  minDistance <- threshold.stats %>% slice_min(Dist)
+  ggplot(threshold.stats, aes(x=prob_threshold, y=Dist)) +
+    geom_line() +
+    geom_point(data=minDistance, color="red")+
+    xlab("Probability Threshold")+
+    ylab("Distance to Top Left in the ROC Curve")+
+    ggtitle("Distance to Top Left in the ROC Curve by Probability Threshold")
+    
+```
+
+
+
+# Random Forest Threshold Value Selection 
+
+  All probability thresholds table: 
+
+```{r}
+
+  threshold.stats <- caret::thresholder(model_rf,
+                                        threshold = seq(0.05, 0.95, by = 0.05),
+                                        statistics = "all")
+  threshold.stats$TPR <- threshold.stats$Sensitivity
+  threshold.stats$TNR <- threshold.stats$Specificity
+  
+  
+  threshold.stats$FNR <- 1 - threshold.stats$Sensitivity
+  threshold.stats$FPR <- 1 - threshold.stats$Specificity
+  
+  threshold.stats %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Negative Rate 
+```{r}
+  threshold.stats %>% slice_min(FNR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Positive Rate
+
+```{r}
+  threshold.stats %>% slice_min(FPR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)  
+```
+
+
+
+ Smallest distance to top left in the ROC curve
+
+```{r}
+  threshold.stats %>% slice_min(Dist) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE) 
+```
+
+```{r}
+  minDistance <- threshold.stats %>% slice_min(Dist)
+  ggplot(threshold.stats, aes(x=prob_threshold, y=Dist)) +
+    geom_line() +
+    geom_point(data=minDistance, color="red")+
+    xlab("Probability Threshold")+
+    ylab("Distance to Top Left in the ROC Curve")+
+    ggtitle("Distance to Top Left in the ROC Curve by Probability Threshold")
+    
+```
+
+
+
+# Support Vector Machine Linear Kernel Threshold Value Selection 
+
+  All probability thresholds table: 
+
+```{r}
+
+  threshold.stats <- caret::thresholder(model_svm_l,
+                                        threshold = seq(0.05, 0.95, by = 0.05),
+                                        statistics = "all")
+  threshold.stats$TPR <- threshold.stats$Sensitivity
+  threshold.stats$TNR <- threshold.stats$Specificity
+  
+  
+  threshold.stats$FNR <- 1 - threshold.stats$Sensitivity
+  threshold.stats$FPR <- 1 - threshold.stats$Specificity
+  
+  threshold.stats %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Negative Rate 
+```{r}
+  threshold.stats %>% slice_min(FNR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Positive Rate
+
+```{r}
+  threshold.stats %>% slice_min(FPR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)  
+```
+
+
+
+ Smallest distance to top left in the ROC curve
+
+```{r}
+  threshold.stats %>% slice_min(Dist) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE) 
+```
+
+```{r}
+  minDistance <- threshold.stats %>% slice_min(Dist)
+  ggplot(threshold.stats, aes(x=prob_threshold, y=Dist)) +
+    geom_line() +
+    geom_point(data=minDistance, color="red")+
+    xlab("Probability Threshold")+
+    ylab("Distance to Top Left in the ROC Curve")+
+    ggtitle("Distance to Top Left in the ROC Curve by Probability Threshold")
+    
+```
+
+
+
+# Support Vector Machine Radial Kernel Threshold Value Selection 
+
+  All probability thresholds table: 
+
+```{r}
+
+  threshold.stats <- caret::thresholder(model_svm_r,
+                                        threshold = seq(0.05, 0.95, by = 0.05),
+                                        statistics = "all")
+  threshold.stats$TPR <- threshold.stats$Sensitivity
+  threshold.stats$TNR <- threshold.stats$Specificity
+  
+  
+  threshold.stats$FNR <- 1 - threshold.stats$Sensitivity
+  threshold.stats$FPR <- 1 - threshold.stats$Specificity
+  
+  threshold.stats %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Negative Rate 
+```{r}
+  threshold.stats %>% slice_min(FNR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)
+```
+
+
+
+  Smallest False Positive Rate
+
+```{r}
+  threshold.stats %>% slice_min(FPR) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE)  
+```
+
+
+
+ Smallest distance to top left in the ROC curve
+
+```{r}
+  threshold.stats %>% slice_min(Dist) %>% 
+    dplyr::select("prob_threshold", "Accuracy", "FNR", "FPR", "Dist", "F1", "TPR", "TNR", "Precision") %>%
+    knitr::kable(digits=3) %>%
+    kableExtra::kable_styling(full_width=FALSE) 
+```
+
+```{r}
+  minDistance <- threshold.stats %>% slice_min(Dist)
+  ggplot(threshold.stats, aes(x=prob_threshold, y=Dist)) +
+    geom_line() +
+    geom_point(data=minDistance, color="red")+
+    xlab("Probability Threshold")+
+    ylab("Distance to Top Left in the ROC Curve")+
+    ggtitle("Distance to Top Left in the ROC Curve by Probability Threshold")
+    
+```
+
+
+
